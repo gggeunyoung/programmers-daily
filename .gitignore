@@ -1,0 +1,6 @@
+node_modules/
+data/raw/
+dist/
+.e2e-profile/
+.e2e-live-profile/
+*.log

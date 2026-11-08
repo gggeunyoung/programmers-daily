@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>1일1코 대시보드</title>
+    <link rel="icon" href="../../icons/icon32.png" />
+    <link rel="stylesheet" href="../ui/base.css" />
+    <link rel="stylesheet" href="dashboard.css" />
+  </head>
+  <body>
+    <header class="appbar">
+      <div class="appbar-inner">
+        <a class="brand" href="#overview"><img src="../../icons/icon48.png" alt="" />1일1코</a>
+        <nav class="tabs" aria-label="대시보드 메뉴">
+          <a href="#overview" data-tab="overview">개요</a>
+          <a href="#history" data-tab="history">기록</a>
+          <a href="#weakness" data-tab="weakness">약점 분석</a>
+          <a href="#settings" data-tab="settings">설정</a>
+        </nav>
+      </div>
+    </header>
+    <main id="view" class="container">
+      <div class="empty">불러오는 중…</div>
+    </main>
+    <div id="tooltip" class="tooltip" role="tooltip" hidden></div>
+    <script type="module" src="dashboard.js"></script>
+  </body>
+</html>

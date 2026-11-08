@@ -1,0 +1,19 @@
+{
+  "name": "programmers-daily",
+  "version": "1.0.0",
+  "private": true,
+  "description": "프로그래머스 하루 한 문제 추천 크롬 확장 (알림 · 풀이 감지 · 복습 · 약점 분석)",
+  "type": "module",
+  "scripts": {
+    "test": "node --test \"tests/*.test.mjs\"",
+    "fetch:challenges": "node scripts/fetch-challenges.mjs data/raw/challenges.json",
+    "build:catalog": "node scripts/build-catalog.mjs data/raw/challenges.json",
+    "e2e": "node scripts/e2e.mjs",
+    "live-check": "node scripts/live-check.mjs",
+    "store:assets": "node scripts/store-assets.mjs",
+    "package": "node scripts/package.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
