@@ -3,7 +3,7 @@ import { CATALOG_META } from '../lib/catalog.js';
 import { dateKey, parseKey, prettyDate, relativeDay } from '../lib/dates.js';
 import { problemUrl } from '../lib/programmers.js';
 import { chooseInTopic } from '../lib/recommender.js';
-import { LANGUAGES } from '../lib/state.js';
+import { DEFAULT_NOTIFY_TIMES, LANGUAGES, MAX_NOTIFY_TIMES } from '../lib/state.js';
 import { TOPIC_MAP, TOPICS, topicName, topicShort } from '../lib/topics.js';
 import {
   attemptSummary,
@@ -160,8 +160,8 @@ function welcomeCard(v) {
       'div',
       { class: 'sub' },
       '매일 ',
-      h('b', null, s.notifyTime),
-      '에 코테 단골 유형을 돌려가며 프로그래머스 문제를 하나 알려드려요.',
+      h('b', null, s.notifyTimes.join(' · ')),
+      '에 오늘의 문제 하나를 알려 드려요. 그날 문제를 풀면 남은 알림은 오지 않아요.',
     ),
     h(
       'ol',
@@ -655,9 +655,70 @@ function field(label, help, control) {
   return h('div', { class: 'field' }, h('div', { class: 'lbl' }, label, help && h('small', null, help)), h('div', { class: 'ctl' }, control));
 }
 
+/** 알림 시각 목록: 칩(× 로 빼기) + 시각 추가 + 기본값 */
+function timesEditor() {
+  const s = state.settings;
+  const input = h('input', { type: 'time', value: '12:00', 'aria-label': '추가할 알림 시각' });
+  const setTimes = (list, message) => save({ notifyTimes: list }, message).then(render);
+  return h(
+    'div',
+    { class: 'times-editor' },
+    h('div', { class: 'lbl' }, '알림 시각', h('small', null, `하루 최대 ${MAX_NOTIFY_TIMES}번 · 같은 날은 같은 문제로 알려요`)),
+    h(
+      'div',
+      { class: 'times' },
+      s.notifyTimes.map((t) =>
+        h(
+          'span',
+          { class: 'time-chip' },
+          t,
+          h(
+            'button',
+            {
+              class: 'x',
+              type: 'button',
+              title: '빼기',
+              'aria-label': `${t} 알림 빼기`,
+              onClick: () => {
+                if (s.notifyTimes.length <= 1) return flash('알림 시각은 하나 이상 있어야 해요');
+                return setTimes(s.notifyTimes.filter((x) => x !== t), `${t} 알림을 뺐어요`);
+              },
+            },
+            '×',
+          ),
+        ),
+      ),
+    ),
+    h(
+      'div',
+      { class: 'times-add' },
+      input,
+      h(
+        'button',
+        {
+          class: 'btn small',
+          type: 'button',
+          onClick: () => {
+            const v = input.value;
+            if (!v) return null;
+            if (s.notifyTimes.includes(v)) return flash('이미 있는 시각이에요');
+            if (s.notifyTimes.length >= MAX_NOTIFY_TIMES) return flash(`알림 시각은 ${MAX_NOTIFY_TIMES}개까지예요`);
+            return setTimes([...s.notifyTimes, v], `${v} 알림을 추가했어요`);
+          },
+        },
+        '시각 추가',
+      ),
+      h(
+        'button',
+        { class: 'btn small ghost', type: 'button', onClick: () => setTimes([...DEFAULT_NOTIFY_TIMES], '기본 시각으로 되돌렸어요') },
+        '기본값(10·14·17·20시)',
+      ),
+    ),
+  );
+}
+
 const SWITCH_LABEL = {
-  enabled: '아침 추천 알림 켜기',
-  reminderEnabled: '저녁 리마인더 켜기',
+  enabled: '알림 켜기',
   adaptive: '약점 맞춤 추천 켜기',
   autoSync: '자동 동기화 켜기',
 };
@@ -690,14 +751,8 @@ function settingsPage() {
     'section',
     { class: 'card section' },
     h('h2', null, '알림'),
-    field('아침 추천 알림', '매일 이 시각에 오늘의 문제를 알려요', [
-      h('input', { type: 'time', value: s.notifyTime, 'aria-label': '추천 알림 시각', onChange: (e) => save({ notifyTime: e.target.value }) }),
-      switchInput('enabled'),
-    ]),
-    field('저녁 리마인더', '그때까지 못 풀었으면 한 번 더', [
-      h('input', { type: 'time', value: s.reminderTime, 'aria-label': '리마인더 시각', onChange: (e) => save({ reminderTime: e.target.value }) }),
-      switchInput('reminderEnabled'),
-    ]),
+    field('알림 받기', '정한 시각마다 오늘의 문제를 알려요. 풀면 그날 남은 알림은 오지 않아요', switchInput('enabled')),
+    timesEditor(),
     field(
       '알림 확인',
       '알림이 안 보이면 윈도우 설정 > 알림에서 Chrome 을 허용하세요',

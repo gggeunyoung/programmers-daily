@@ -36,7 +36,8 @@ async function walk(rel) {
 const dosTime = (d) => ((d.getHours() << 11) | (d.getMinutes() << 5) | Math.floor(d.getSeconds() / 2)) & 0xffff;
 const dosDate = (d) => (((d.getFullYear() - 1980) << 9) | ((d.getMonth() + 1) << 5) | d.getDate()) & 0xffff;
 
-const files = (await Promise.all(INCLUDE.map(walk))).flat();
+// 아이콘 원본(SVG)은 빌드용이라 패키지에서 뺀다
+const files = (await Promise.all(INCLUDE.map(walk))).flat().filter((f) => !f.split(path.sep).join('/').startsWith('icons/src/'));
 const now = new Date();
 const parts = [];
 const central = [];

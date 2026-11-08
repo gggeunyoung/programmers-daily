@@ -1,6 +1,6 @@
 import { dateKey, prettyDate, relativeDay } from '../lib/dates.js';
 import { topicName, topicShort } from '../lib/topics.js';
-import { attemptSummary, levelLabel, reviewHint, todayView } from '../lib/view.js';
+import { attemptSummary, levelLabel, nextAlarmText, reviewHint, todayView } from '../lib/view.js';
 import { call, loadState, onStateChange, openDashboard, openUrl } from '../ui/api.js';
 import { flash, REASON_TEXT, statusBadge } from '../ui/common.js';
 import { h, mount } from '../ui/dom.js';
@@ -76,11 +76,18 @@ function todayCard(v) {
   }
   const r = d.record;
   const solved = d.status === 'solved';
-  const result = solved
-    ? h('div', { class: 'result' }, attemptSummary(r) || '해결했어요')
+  const resultText = solved
+    ? attemptSummary(r) || '해결했어요'
     : r?.wrong
-      ? h('div', { class: 'result' }, `오답 ${r.wrong}회 — 정답을 제출하면 자동으로 체크돼요`)
-      : h('div', { class: 'result muted' }, '프로그래머스에서 제출해 정답이 나오면 자동으로 체크돼요');
+      ? `오답 ${r.wrong}회 — 정답이면 자동 체크돼요`
+      : '제출해서 정답이면 자동으로 체크돼요';
+  // 안내 문구와 '다음 알림'을 한 줄에(팝업 높이 600px 안에 들도록)
+  const result = h(
+    'div',
+    { class: 'result' },
+    h('span', { class: solved || r?.wrong ? '' : 'muted' }, resultText),
+    h('span', { class: 'alarm' }, '⏰ ', nextAlarmText(state, v.today)),
+  );
 
   const actions = [
     h('button', { class: `btn ${solved ? '' : 'primary'}`, onClick: () => go(d.url) }, solved ? '다시 보기' : '문제 풀러 가기 →'),

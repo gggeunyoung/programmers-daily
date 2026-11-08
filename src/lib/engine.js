@@ -22,7 +22,6 @@ import { normalizeSettings } from './state.js';
 
 const MAX_EVENTS = 3000;
 const MAX_OPENS = 300;
-const REMIND_GAP_MS = 2 * 3600_000;
 
 export function newRecord(id, hint = {}, origin = 'self', now = Date.now()) {
   const p = getProblem(id);
@@ -125,8 +124,10 @@ export function ensureDay(state, today, now = Date.now()) {
     relaxed: false,
     reviewIds: due.map((r) => r.id),
     createdAt: now,
+    sentSlots: [], // 처리한 알림 시각('HH:MM')
+    notifiedCount: 0, // 실제로 띄운 알림 수
     notifiedAt: null,
-    remindedAt: null,
+    muted: false, // '오늘은 그만 알림'
     rerolls: 0,
     closed: false,
   };
@@ -253,6 +254,7 @@ export function staleDailyIds(state, solvedList, now = Date.now()) {
   const today = dateKey(now);
   const day = state.days[today];
   if (!day?.problemId) return [];
+  if (notifiedCountOf(day) > 0) return []; // 이미 알림으로 보여 준 오늘의 문제는 바꾸지 않는다
   const r = state.records[day.problemId];
   const solvedIds = new Set(solvedList.map((x) => Number(x.id)));
   if (r && r.status === 'pending' && r.submits === 0 && !r.firstOpenedAt && solvedIds.has(r.id)) return [r.id];
@@ -351,34 +353,58 @@ export function updateSettings(state, patch) {
   return state.settings;
 }
 
+/** 오늘 아직 안 푼 것: 오늘의 문제, 복습 문제 */
+export function pendingToday(state, today) {
+  const day = state.days[today];
+  const daily = Boolean(day?.problemId && state.records[day.problemId]?.status === 'pending');
+  const reviews = (day?.reviewIds ?? []).filter((id) => state.records[id]?.status === 'pending');
+  return { daily, reviews, any: daily || reviews.length > 0 };
+}
+
+/** 오늘 실제로 띄운 알림 수(구버전 기록은 notifiedAt 만 있다) */
+export function notifiedCountOf(day) {
+  return day?.notifiedCount ?? (day?.notifiedAt ? 1 : 0);
+}
+
 /**
- * 지금 보내야 할 알림. 같은 날 같은 종류는 한 번만.
- * consume: 아침 알림 시각이 지나 오늘 몫을 처리했다(보낼 게 없어도 notifiedAt 을 찍는다)
- * @returns {{consume:boolean, daily:boolean, review:boolean, remind:boolean, suppressRemind:boolean}}
+ * 지금 처리할 알림 시각과 보낼지 여부.
+ * - 정한 시각(notifyTimes)마다 한 번씩, 그날 문제를 다 풀었으면 보내지 않는다(시각만 소진).
+ * - 컴퓨터가 꺼져 있어 여러 시각이 한꺼번에 지났으면 알림은 한 번만 보낸다.
+ * - 첫 알림은 '오늘의 문제', 그다음부터는 '아직 안 풀었어요'.
+ * @returns {{slots:string[], send:boolean, kind:'daily'|'remind'|null}}
  */
 export function notificationPlan(state, now = Date.now()) {
   const s = state.settings;
   const today = dateKey(now);
   const day = state.days[today];
-  const plan = { consume: false, daily: false, review: false, remind: false, suppressRemind: false };
+  const plan = { slots: [], send: false, kind: null };
   if (!day) return plan;
-  const dailyPending = day.problemId && state.records[day.problemId]?.status === 'pending';
-  const reviewPending = (day.reviewIds ?? []).some((id) => state.records[id]?.status === 'pending');
-  const afterNotify = now >= atTime(today, s.notifyTime);
-  const afterRemind = now >= atTime(today, s.reminderTime);
-
-  if (s.enabled && !day.notifiedAt && afterNotify) {
-    plan.consume = true;
-    plan.daily = Boolean(dailyPending);
-    plan.review = reviewPending;
-    // 늦게 켜서 아침 알림과 저녁 알림이 겹치면 저녁 알림은 생략
-    if (afterRemind) plan.suppressRemind = true;
-  }
-  if (s.reminderEnabled && !day.remindedAt && afterRemind && !plan.suppressRemind && (dailyPending || reviewPending)) {
-    const last = day.notifiedAt ?? 0;
-    if (now - last >= REMIND_GAP_MS) plan.remind = true;
-  }
+  const done = new Set(day.sentSlots ?? []);
+  plan.slots = (s.notifyTimes ?? []).filter((t) => now >= atTime(today, t) && !done.has(t));
+  if (!plan.slots.length) return plan;
+  if (!s.enabled || day.muted || !pendingToday(state, today).any) return plan;
+  plan.send = true;
+  plan.kind = notifiedCountOf(day) === 0 ? 'daily' : 'remind';
   return plan;
+}
+
+/** 알림 시각 소진 기록. notified 면 실제로 띄운 것으로 센다 */
+export function markSlots(state, today, slots, { notified = false, at = Date.now() } = {}) {
+  const day = state.days[today];
+  if (!day) return;
+  day.sentSlots = [...new Set([...(day.sentSlots ?? []), ...slots])].sort();
+  if (notified) {
+    day.notifiedCount = notifiedCountOf(day) + 1;
+    day.notifiedAt = day.notifiedAt ?? at;
+    day.lastNotifiedAt = at;
+  }
+}
+
+/** '오늘은 그만 알림' */
+export function muteToday(state, now = Date.now()) {
+  const day = state.days[dateKey(now)];
+  if (day) day.muted = true;
+  return Boolean(day);
 }
 
 /** 날짜별 기록 등 오래된 데이터 정리(1년 넘은 day 항목) */

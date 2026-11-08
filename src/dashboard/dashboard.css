@@ -616,6 +616,65 @@ details.imported[open] summary::before {
 .switch:checked::after {
   transform: translateX(18px);
 }
+.times-editor {
+  padding: 10px 0 12px;
+  border-top: 1px solid var(--grid);
+}
+.times-editor .lbl {
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+.times-editor .lbl small {
+  display: block;
+  font-weight: 400;
+  color: var(--muted);
+  font-size: 12px;
+}
+.times {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.time-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  height: 30px;
+  padding: 0 4px 0 12px;
+  border-radius: 999px;
+  background: var(--accent-wash);
+  color: var(--accent-ink);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.time-chip .x {
+  width: 22px;
+  height: 22px;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: inherit;
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+}
+.time-chip .x:hover {
+  background: color-mix(in srgb, var(--accent) 20%, transparent);
+}
+.times-add {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 10px;
+}
+.times-add input[type='time'] {
+  height: 30px;
+  padding: 0 8px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+}
 .topic-checks {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

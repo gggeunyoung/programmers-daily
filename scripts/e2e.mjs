@@ -64,25 +64,42 @@ async function main() {
     const day = st.days[today];
     const daily = st.records[day.problemId];
     check('설치 직후 오늘의 문제 생성', day?.problemId, `${daily?.title} (${day?.topic}, Lv.${daily?.level})`);
-    check('기본 설정 저장', st.settings.notifyTime === '09:00' && st.settings.retryIntervalDays === 3);
+    check(
+      '기본 설정 저장(알림 10·14·17·20시)',
+      st.settings.notifyTimes.join(',') === '10:00,14:00,17:00,20:00' && st.settings.retryIntervalDays === 3,
+      st.settings.notifyTimes.join(' · '),
+    );
     const alarms = await evaluate(swS, `chrome.alarms.getAll().then((a) => a.map((x) => x.name).sort())`);
-    check('알람 등록(daily·remind·midnight·tick)', ['daily', 'midnight', 'remind', 'tick'].every((n) => alarms.includes(n)), alarms.join(', '));
+    check(
+      '알람 등록(알림 시각 4개·자정·안전망)',
+      ['slot|10:00', 'slot|14:00', 'slot|17:00', 'slot|20:00', 'midnight', 'tick'].every((n) => alarms.includes(n)),
+      alarms.join(', '),
+    );
     await sleep(800);
     const { targetInfos: afterInstall } = await cdp.send('Target.getTargets');
     check('설치 시 환영 페이지 열림', afterInstall.some((t) => t.url.includes('dashboard.html#welcome')));
     check('비로그인 동기화 처리', st.solvedSync.ok === false || st.solvedSync.ok === true, st.solvedSync.message);
 
-    // 3) 알림·배지
-    await evaluate(swS, `self.codingDaily.handleMessage({ type: 'updateSettings', patch: { notifyTime: '00:00' } })`);
+    // 3) 알림·배지 (검사로 만든 알림은 확인하자마자 지운다)
+    const listNotes = `chrome.notifications.getAll().then((n) => Object.keys(n))`;
+    const clearNotes = `chrome.notifications.getAll().then((n) => Promise.all(Object.keys(n).map((id) => chrome.notifications.clear(id)))).then(() => true)`;
+    const onInstall = await evaluate(swS, listNotes);
+    check('설치할 때는 알림을 띄우지 않음', onInstall.length === 0, onInstall.join(', ') || '(없음)');
+    await evaluate(swS, `self.codingDaily.handleMessage({ type: 'updateSettings', patch: { notifyTimes: ['00:00', '23:59'] } })`);
     await evaluate(swS, `self.codingDaily.tick('e2e')`);
-    const notes = await evaluate(swS, `chrome.notifications.getAll().then((n) => Object.keys(n))`);
-    check('아침 알림 생성', notes.some((n) => n.startsWith(`daily|${today}|`)), notes.join(', ') || '(없음)');
+    const notes = await evaluate(swS, listNotes);
+    check('알림 시각이 되면 오늘의 문제로 알림', notes.includes(`day|${today}|${day.problemId}`), notes.join(', ') || '(없음)');
+    await evaluate(swS, `self.codingDaily.tick('e2e-again')`);
+    const again = await evaluate(swS, listNotes);
+    check('같은 시각엔 다시 보내지 않음(알림 1장)', again.length === 1, again.join(', '));
+    await evaluate(swS, clearNotes);
     const badge = await evaluate(swS, `chrome.action.getBadgeText({})`);
     check('배지에 남은 문제 수 표시', badge === '1', `badge='${badge}'`);
-    await evaluate(swS, `self.codingDaily.handleMessage({ type: 'updateSettings', patch: { notifyTime: '09:00' } })`);
+    await evaluate(swS, `self.codingDaily.handleMessage({ type: 'updateSettings', patch: { notifyTimes: ['10:00', '14:00', '17:00', '20:00'] } })`);
     await evaluate(swS, `self.codingDaily.handleMessage({ type: 'testNotification' })`);
-    const notes2 = await evaluate(swS, `chrome.notifications.getAll().then((n) => Object.keys(n))`);
+    const notes2 = await evaluate(swS, listNotes);
     check('테스트 알림', notes2.some((n) => n.startsWith('test|')));
+    await evaluate(swS, clearNotes);
 
     // 4) 프로그래머스 실제 문제 페이지에서 풀이 감지
     if (!OFFLINE) {

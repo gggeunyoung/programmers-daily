@@ -2,6 +2,7 @@
 import { computeTopicStats, rankWeakTopics, reviewQueue, summarize } from './analytics.js';
 import { getProblem, tierLabel } from './catalog.js';
 import { addDays, dateKey, diffDays, formatDuration, parseKey } from './dates.js';
+import { pendingToday } from './engine.js';
 import { problemUrl } from './programmers.js';
 import { MAX_REROLLS_PER_DAY } from './recommender.js';
 import { topicShort } from './topics.js';
@@ -130,6 +131,20 @@ export function levelLabel(level) {
 
 export function topicChips(topics) {
   return (topics ?? []).map((t) => topicShort(t));
+}
+
+/** 팝업에 보여 줄 '다음 알림' 안내 */
+export function nextAlarmText(state, today, now = Date.now()) {
+  const s = state.settings;
+  const day = state.days[today];
+  if (!s.enabled) return '알림 꺼짐';
+  if (!day) return '';
+  if (!pendingToday(state, today).any) return '오늘 알림 끝';
+  if (day.muted) return '오늘은 알림 그만';
+  const d = new Date(now);
+  const hm = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+  const next = (s.notifyTimes ?? []).find((t) => t > hm && !(day.sentSlots ?? []).includes(t));
+  return next ? `다음 알림 ${next}` : '오늘 알림 끝';
 }
 
 export function reviewHint(r, today) {

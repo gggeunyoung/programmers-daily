@@ -20,11 +20,13 @@ export const LANGUAGES = [
   ['scala', 'Scala'],
 ];
 
+// 하루 알림 시각. 그날 문제를 풀면 남은 시각에는 보내지 않는다
+export const DEFAULT_NOTIFY_TIMES = Object.freeze(['10:00', '14:00', '17:00', '20:00']);
+export const MAX_NOTIFY_TIMES = 6;
+
 export const DEFAULT_SETTINGS = Object.freeze({
-  enabled: true, // 아침 알림
-  notifyTime: '09:00',
-  reminderEnabled: true, // 저녁까지 못 풀었으면 한 번 더
-  reminderTime: '21:00',
+  enabled: true, // 알림 켜기
+  notifyTimes: [...DEFAULT_NOTIFY_TIMES],
   retryIntervalDays: 3, // 못 푼 문제를 며칠 뒤 다시 알릴지
   maxReviewsPerDay: 2,
   minLevel: 1,
@@ -39,7 +41,7 @@ export const DEFAULT_SETTINGS = Object.freeze({
 export function createInitialState(now = Date.now()) {
   return {
     schemaVersion: SCHEMA_VERSION,
-    settings: { ...DEFAULT_SETTINGS, topics: [...DEFAULT_SETTINGS.topics] },
+    settings: { ...DEFAULT_SETTINGS, notifyTimes: [...DEFAULT_SETTINGS.notifyTimes], topics: [...DEFAULT_SETTINGS.topics] },
     records: {}, // 문제ID → 풀이 기록 (engine.newRecord)
     days: {}, // 'YYYY-MM-DD' → 그날의 추천(오늘의 문제 + 복습)
     events: [], // 시간순 활동 로그 { t, d, id, type }
@@ -58,14 +60,25 @@ const clampInt = (v, lo, hi, fallback) => {
   return Math.min(hi, Math.max(lo, n));
 };
 
+/** 'HH:MM' 목록 정리: 형식 맞추기·중복 제거·시간순 정렬, 비면 기본값 */
+export function normalizeTimes(list) {
+  const out = [
+    ...new Set(
+      (Array.isArray(list) ? list : [])
+        .map((t) => parseHHMM(t))
+        .filter(Boolean)
+        .map((p) => `${String(p.h).padStart(2, '0')}:${String(p.min).padStart(2, '0')}`),
+    ),
+  ].sort();
+  return out.length ? out.slice(0, MAX_NOTIFY_TIMES) : [...DEFAULT_NOTIFY_TIMES];
+}
+
 export function normalizeSettings(input = {}, base = DEFAULT_SETTINGS) {
   const s = { ...base, ...input };
   const out = {
     enabled: Boolean(s.enabled),
-    notifyTime: parseHHMM(s.notifyTime) ? s.notifyTime.padStart(5, '0') : base.notifyTime,
-    reminderEnabled: Boolean(s.reminderEnabled),
-    reminderTime: parseHHMM(s.reminderTime) ? s.reminderTime.padStart(5, '0') : base.reminderTime,
-    retryIntervalDays: clampInt(s.retryIntervalDays, 1, 30, base.retryIntervalDays),
+    notifyTimes: normalizeTimes(s.notifyTimes ?? DEFAULT_NOTIFY_TIMES),
+    retryIntervalDays: clampInt(s.retryIntervalDays, 1, 30, base.retryIntervalDays ?? DEFAULT_SETTINGS.retryIntervalDays),
     maxReviewsPerDay: clampInt(s.maxReviewsPerDay, 0, 5, base.maxReviewsPerDay),
     minLevel: clampInt(s.minLevel, 1, 5, base.minLevel),
     maxLevel: clampInt(s.maxLevel, 1, 5, base.maxLevel),

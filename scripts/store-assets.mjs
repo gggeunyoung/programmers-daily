@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // 크롬 웹스토어 등록 이미지 만들기 → store/images/
-//   screenshot-1-hero.png ~ screenshot-5-history.png (1280x800), promo-small-440x280.png
+//   screenshots/2-overview ~ screenshots/5-history (1280x800), promo-small-440x280.png
+//   (1번 대표 이미지는 store-main-image.mjs)
 // 실제 확장 화면(데모 기록)을 헤드리스 Chrome 으로 찍고, 소개 컷은 같은 디자인으로 합성한다.
 // 프로그래머스 사이트 화면은 쓰지 않는다(확장 자체 화면만).
 import { readFile, writeFile, mkdir, rm } from 'node:fs/promises';
@@ -39,7 +40,7 @@ async function compose(html, { width, height }) {
 const save = (name, b64) => writeFile(path.join(OUT, name), Buffer.from(b64, 'base64'));
 
 try {
-  await mkdir(OUT, { recursive: true });
+  await mkdir(path.join(OUT, 'screenshots'), { recursive: true });
   const { id: extId, swSession } = await loadExtension(root);
   const extUrl = (p) => `chrome-extension://${extId}/${p}`;
   const today = dateKey();
@@ -48,60 +49,24 @@ try {
   await evaluate(swSession, `chrome.storage.local.set({ state: ${JSON.stringify(demo)} }).then(() => true)`);
   const icon = (await readFile(path.join(root, 'icons', 'icon128.png'))).toString('base64');
 
-  // 팝업(2배율)
-  const popup = await openPage(extUrl('src/popup/popup.html'), { width: 368, height: 640, scale: 2 });
-  await waitUntil(popup.sessionId, `document.querySelector('.today .title')?.textContent`);
-  // 창 높이가 아니라 내용 높이만큼만 찍는다(아래 빈 공간 없이)
-  const ph = await evaluate(popup.sessionId, `Math.ceil(document.getElementById('app').getBoundingClientRect().height)`);
-  const popupPng = await capture(popup.sessionId, { width: 368, height: ph, scale: 2 });
-
   // 대시보드 화면들(1280x800 그대로)
   const dash = await openPage(extUrl('src/dashboard/dashboard.html#overview'), { width: 1280, height: 800 });
   await waitUntil(dash.sessionId, `document.querySelector('.today-hero .title')?.textContent`);
-  await save('screenshot-2-overview.png', await capture(dash.sessionId, { width: 1280, height: 800 }));
+  await save('screenshots/2-overview.png', await capture(dash.sessionId, { width: 1280, height: 800 }));
   await evaluate(dash.sessionId, `location.hash = '#weakness'; true`);
   await waitUntil(dash.sessionId, `document.querySelectorAll('.bar-row').length === 14`);
-  await save('screenshot-4-weakness.png', await capture(dash.sessionId, { width: 1280, height: 800 }));
+  await save('screenshots/4-weakness.png', await capture(dash.sessionId, { width: 1280, height: 800 }));
   await evaluate(dash.sessionId, `location.hash = '#history'; true`);
   await waitUntil(dash.sessionId, `document.querySelectorAll('tbody tr').length > 3`);
-  await save('screenshot-5-history.png', await capture(dash.sessionId, { width: 1280, height: 800 }));
+  await save('screenshots/5-history.png', await capture(dash.sessionId, { width: 1280, height: 800 }));
 
   const base = `*{box-sizing:border-box}html,body{margin:0;font-family:${FONT};-webkit-font-smoothing:antialiased}`;
 
-  // 1) 소개 컷: 문구 + 팝업
-  await save(
-    'screenshot-1-hero.png',
-    await compose(
-      `<!doctype html><html><head><meta charset="utf-8"><style>${base}
-      body{width:1280px;height:800px;overflow:hidden;background:linear-gradient(135deg,#e3eefc 0%,#f6f8fb 55%,#eaf1fb 100%);color:#0b0b0b;position:relative}
-      .copy{position:absolute;left:100px;top:205px;width:600px}
-      .brand{display:flex;align-items:center;gap:12px;font-size:22px;font-weight:800;color:#1c5cab}
-      .brand img{width:44px;height:44px}
-      h1{margin:28px 0 30px;font-size:54px;line-height:1.22;letter-spacing:-1.5px;font-weight:800}
-      h1 em{font-style:normal;color:#2a78d6}
-      ul{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:14px}
-      li{display:flex;gap:12px;align-items:flex-start;font-size:21px;color:#33322f;line-height:1.45}
-      li b{display:inline-grid;place-items:center;flex:0 0 28px;height:28px;border-radius:50%;background:#2a78d6;color:#fff;font-size:15px;margin-top:2px}
-      .shot{position:absolute;right:110px;top:50%;transform:translateY(-50%);height:690px;border-radius:16px;box-shadow:0 30px 60px rgba(28,92,171,.22),0 8px 20px rgba(0,0,0,.08)}
-      </style></head><body>
-      <div class="copy">
-        <div class="brand"><img src="data:image/png;base64,${icon}">1일1코</div>
-        <h1>코테 단골 유형에서<br><em>하루에 알고리즘 하나</em></h1>
-        <ul>
-          <li><b>1</b>14개 유형을 출제 비중대로 돌려가며 추천</li>
-          <li><b>2</b>제출하면 정답·오답을 자동으로 기록</li>
-          <li><b>3</b>못 푼 문제는 3일 뒤 다시, 약한 유형은 더 자주</li>
-        </ul>
-      </div>
-      <img class="shot" src="data:image/png;base64,${popupPng}">
-      </body></html>`,
-      { width: 1280, height: 800 },
-    ),
-  );
+  // 1번 대표 이미지는 scripts/store-main-image.mjs 가 만든다(screenshots/1-main.png)
 
   // 3) 알림·자동 감지 컷 (확장 자체 UI 표현)
   await save(
-    'screenshot-3-detect.png',
+    'screenshots/3-detect.png',
     await compose(
       `<!doctype html><html><head><meta charset="utf-8"><style>${base}
       body{width:1280px;height:800px;overflow:hidden;background:#11161f;color:#f1f3f5;position:relative}
@@ -122,14 +87,14 @@ try {
       .t span{display:block;margin-top:4px;font-size:15px;font-weight:500;color:#adb5bd}
       .t.info{border-left:5px solid #4dabf7}.t.fail{border-left:5px solid #fa5252}.t.pass{border-left:5px solid #40c057}
       </style></head><body>
-      <div class="copy"><h1>제출만 하면 자동으로 체크</h1><p>아침엔 알림으로 문제를 받고, 문제 페이지에서 제출하면<br>정답·오답이 기록돼요. 못 풀면 며칠 뒤 다시 알려 드려요.</p></div>
-      <div class="label" style="left:100px;top:420px">매일 아침 알림</div>
+      <div class="copy"><h1>제출만 하면 자동으로 체크</h1><p>정한 시각마다 같은 문제로 알림을 받고, 제출하면 정답·오답이<br>기록돼요. 풀면 그날 알림은 끝, 못 풀면 며칠 뒤 다시 알려 드려요.</p></div>
+      <div class="label" style="left:100px;top:420px">정한 시각마다 알림 (기본 10·14·17·20시)</div>
       <div class="note">
         <div class="app"><img src="data:image/png;base64,${icon}">Google Chrome · 1일1코</div>
         <h3>오늘의 코테 · 해시 Lv.2</h3>
         <div class="m">전화번호 목록</div>
         <div class="c">🔥 4일 연속 해결 중 · 복습 1문제 대기</div>
-        <div class="btns"><span>문제 풀러 가기</span><span>1시간 뒤 다시 알림</span></div>
+        <div class="btns"><span>문제 풀러 가기</span><span>오늘은 그만 알림</span></div>
       </div>
       <div class="label" style="right:100px;top:355px">문제 페이지에서 제출하면</div>
       <div class="stack">

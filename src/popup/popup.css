@@ -10,7 +10,7 @@ body {
 .popup {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
   padding: 12px 14px;
 }
 
@@ -100,6 +100,18 @@ body {
   flex: 1;
   height: 38px;
   font-size: 14.5px;
+}
+
+.today .result {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+.today .result .alarm {
+  flex-shrink: 0;
+  font-size: 12px;
+  color: var(--muted);
 }
 
 .block h3 {

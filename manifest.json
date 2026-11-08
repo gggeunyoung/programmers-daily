@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "1일1코 - 하루에 알고리즘 하나",
   "short_name": "1일1코",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "프로그래머스 코딩테스트 문제를 매일 하나씩 알림으로 추천하고, 제출 결과를 자동 감지해 복습·약점 분석까지 해 줍니다. (비공식)",
   "homepage_url": "https://github.com/gggeunyoung/programmers-daily",
   "minimum_chrome_version": "116",

@@ -7,6 +7,8 @@ import {
   applySync,
   ensureDay,
   manualAction,
+  markSlots,
+  muteToday,
   notificationPlan,
   prepare,
   processRollover,
@@ -303,24 +305,41 @@ test('약점 분석: 못 푼 유형이 위로 오고, 데이터가 적으면 순
   assert.ok(w.dp > 2);
 });
 
-test('알림 계획: 아침 1번, 저녁엔 안 풀었을 때만, 늦게 켜면 저녁 알림 생략', () => {
-  const s = fresh({ notifyTime: '09:00', reminderTime: '21:00' });
+test('알림 계획: 정한 시각마다 한 번, 풀면 그만, 밀린 시각은 한 번에', () => {
+  const s = fresh(); // 기본 10·14·17·20시
   prepare(s, at(D0, '08:00'));
-  assert.equal(notificationPlan(s, at(D0, '08:59')).daily, false);
-  const p1 = notificationPlan(s, at(D0, '09:01'));
-  assert.equal(p1.daily, true);
-  s.days[D0].notifiedAt = at(D0, '09:01');
-  assert.equal(notificationPlan(s, at(D0, '12:00')).daily, false);
-  assert.equal(notificationPlan(s, at(D0, '21:05')).remind, true);
-  manualAction(s, { id: s.days[D0].problemId, action: 'solved', at: at(D0, '21:06') });
-  assert.equal(notificationPlan(s, at(D0, '21:10')).remind, false);
+  assert.equal(notificationPlan(s, at(D0, '09:59')).slots.length, 0);
+  let p = notificationPlan(s, at(D0, '10:00'));
+  assert.deepEqual(p.slots, ['10:00']);
+  assert.equal(p.send, true);
+  assert.equal(p.kind, 'daily');
+  markSlots(s, D0, p.slots, { notified: true, at: at(D0, '10:00') });
+  assert.equal(notificationPlan(s, at(D0, '13:00')).slots.length, 0);
+  p = notificationPlan(s, at(D0, '14:05'));
+  assert.equal(p.kind, 'remind');
+  markSlots(s, D0, p.slots, { notified: true });
+  manualAction(s, { id: s.days[D0].problemId, action: 'solved', at: at(D0, '15:00') });
+  p = notificationPlan(s, at(D0, '17:00'));
+  assert.deepEqual(p.slots, ['17:00']);
+  assert.equal(p.send, false, '풀었으면 시각만 소진');
 
+  // 크롬을 오후 6시에 처음 켜면 지난 세 시각을 한 번에 처리하고 알림은 한 번
   const late = fresh();
-  prepare(late, at(D0, '22:00'));
-  const p2 = notificationPlan(late, at(D0, '22:00'));
-  assert.equal(p2.daily, true);
-  assert.equal(p2.suppressRemind, true);
-  assert.equal(p2.remind, false);
+  prepare(late, at(D0, '18:00'));
+  const q = notificationPlan(late, at(D0, '18:00'));
+  assert.deepEqual(q.slots, ['10:00', '14:00', '17:00']);
+  assert.equal(q.send, true);
+  assert.equal(q.kind, 'daily');
+
+  // 오늘은 그만 알림
+  const m = fresh();
+  prepare(m, at(D0, '09:00'));
+  muteToday(m, at(D0, '09:30'));
+  assert.equal(notificationPlan(m, at(D0, '10:00')).send, false);
+
+  // 알림 시각 직접 설정: 형식 맞추기·중복 제거·정렬
+  updateSettings(m, { notifyTimes: ['21:30', '7:05', '21:30', 'x'] });
+  assert.deepEqual(m.settings.notifyTimes, ['07:05', '21:30']);
 });
 
 test('통계 요약: 연속 해결일', () => {
@@ -352,11 +371,12 @@ test('저장소: 동시 쓰기가 유실되지 않는다', async () => {
 });
 
 test('설정 정규화·마이그레이션', () => {
-  const s = normalizeSettings({ minLevel: 4, maxLevel: 2, startLevel: 9, notifyTime: '7:30', topics: ['dp', 'nope'], retryIntervalDays: 0 });
+  const s = normalizeSettings({ minLevel: 4, maxLevel: 2, startLevel: 9, notifyTimes: ['7:30', '21:00', '7:30'], topics: ['dp', 'nope'], retryIntervalDays: 0 });
   assert.equal(s.minLevel, 2);
   assert.equal(s.maxLevel, 4);
   assert.equal(s.startLevel, 4);
-  assert.equal(s.notifyTime, '07:30');
+  assert.deepEqual(s.notifyTimes, ['07:30', '21:00']);
+  assert.deepEqual(normalizeSettings({}).notifyTimes, ['10:00', '14:00', '17:00', '20:00']);
   assert.deepEqual(s.topics, ['dp']);
   assert.equal(s.retryIntervalDays, 1);
   const m = migrate({ records: { 1: { id: 1 } }, days: {}, settings: {} });

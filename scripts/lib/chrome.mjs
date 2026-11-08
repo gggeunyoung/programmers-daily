@@ -103,7 +103,8 @@ export async function launchChrome({ profile, headed = false, flags = [] }) {
     '--no-default-browser-check',
     '--disable-search-engine-choice-screen',
     '--lang=ko-KR',
-    ...(headed ? [] : ['--headless=new', '--window-size=1280,900']),
+    // 헤드리스 검사용 크롬의 알림이 윈도우 알림 센터로 새어 나가지 않게 시스템 알림을 끈다
+    ...(headed ? [] : ['--headless=new', '--window-size=1280,900', '--disable-features=NativeNotifications,SystemNotifications']),
     ...flags,
     'about:blank',
   ];

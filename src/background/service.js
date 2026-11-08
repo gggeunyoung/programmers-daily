@@ -7,6 +7,8 @@ import {
   compact,
   ensureDay,
   manualAction,
+  markSlots,
+  muteToday,
   notificationPlan,
   prepare,
   processRollover,
@@ -23,19 +25,23 @@ import { topicName } from '../lib/topics.js';
 export const SYNC_STALE_MS = 6 * 3600_000; // 자동 동기화 주기
 export const SYNC_RETRY_GAP_MS = 10 * 60_000; // 성공한 뒤 다음 시도까지 최소 간격
 export const SYNC_EAGER_GAP_MS = 30_000; // 아직 성공 못 했을 때(로그인 전 등) 재시도 간격
-const SNOOZE_MINUTES = 60;
 
 export function createService({ store, chrome, now = () => Date.now(), fetchImpl = (...a) => fetch(...a) }) {
   const iconUrl = () => chrome.runtime.getURL('icons/icon128.png');
   const dashboardUrl = (hash = '') => chrome.runtime.getURL(`src/dashboard/dashboard.html${hash}`);
 
   // ── 알람 ───────────────────────────────────────────────
+  // 알림 시각마다 'slot|HH:MM' 알람 하나(울리면 다음 날 같은 시각으로 다시 건다) + 자정 + 30분 안전망
   async function scheduleAlarms() {
     const { settings } = await store.read();
     const t = now();
-    await chrome.alarms.create('daily', { when: nextOccurrence(settings.notifyTime, t) });
-    if (settings.reminderEnabled) await chrome.alarms.create('remind', { when: nextOccurrence(settings.reminderTime, t) });
-    else await chrome.alarms.clear('remind');
+    const wanted = new Set(settings.notifyTimes.map((x) => `slot|${x}`));
+    for (const a of (await chrome.alarms.getAll?.()) ?? []) {
+      if ((a.name.startsWith('slot|') && !wanted.has(a.name)) || a.name === 'daily' || a.name === 'remind' || a.name.startsWith('snooze|')) {
+        await chrome.alarms.clear(a.name);
+      }
+    }
+    for (const time of settings.notifyTimes) await chrome.alarms.create(`slot|${time}`, { when: nextOccurrence(time, t) });
     await chrome.alarms.create('midnight', { when: nextOccurrence('00:00', t) + 60_000 });
     // 컴퓨터가 잠들어 있어 시각 알람을 놓쳐도 30분 안에는 따라잡는 안전망
     await chrome.alarms.create('tick', { periodInMinutes: 30 });
@@ -43,26 +49,27 @@ export function createService({ store, chrome, now = () => Date.now(), fetchImpl
 
   async function onAlarm(alarm) {
     const name = alarm?.name ?? '';
-    if (name.startsWith('snooze|')) return onSnooze(name);
     await tick(name);
-    if (name !== 'tick') await scheduleAlarms();
+    if (name.startsWith('slot|')) await chrome.alarms.create(name, { when: nextOccurrence(name.slice(5), now()) });
+    else if (name === 'midnight') await chrome.alarms.create('midnight', { when: nextOccurrence('00:00', now()) + 60_000 });
   }
 
   // ── 주기 작업 ───────────────────────────────────────────
   /** 날짜 넘김·오늘 추천 보장·알림·배지·자동 동기화 */
   async function tick(reason = 'tick') {
     const t = now();
+    // 설치 직후엔 안내 페이지가 오늘의 문제를 보여 주므로, 이미 지난 알림 시각은 알림 없이 넘긴다
+    const silent = reason === 'install';
     const { plan, info } = await store.update((s) => {
       const today = prepare(s, t);
       compact(s, today);
       s.meta.lastTickAt = t;
       const p = notificationPlan(s, t);
-      const day = s.days[today];
-      if (p.consume) day.notifiedAt = t;
-      if (p.suppressRemind || p.remind) day.remindedAt = t;
-      return { plan: p, info: notificationInfo(s, today) };
+      const send = p.send && !silent;
+      if (p.slots.length) markSlots(s, today, p.slots, { notified: send, at: t });
+      return { plan: { ...p, send }, info: notificationInfo(s, today) };
     });
-    await deliver(plan, info);
+    if (plan.send) await deliver(plan.kind, info);
     await refreshBadge();
     if (reason !== 'install') await syncSolved().catch(() => {});
     return plan;
@@ -93,46 +100,42 @@ export function createService({ store, chrome, now = () => Date.now(), fetchImpl
     }
   }
 
-  function dailyNotification(info, kind) {
+  const BUTTONS = [{ title: '문제 풀러 가기' }, { title: '오늘은 그만 알림' }];
+
+  /** 하루 한 장: 오늘의 문제(안 풀었으면) 아니면 복습 문제. 같은 날은 같은 알림을 새로 고쳐 쌓이지 않게 한다 */
+  function buildNotification(kind, info) {
     const d = info.daily;
-    const lv = d.level ? ` Lv.${d.level}` : '';
-    if (kind === 'remind') {
+    const reviewLine = info.reviews.length ? `다시 도전 ${info.reviews.length}문제도 있어요` : '';
+    if (d?.pending) {
+      const lv = d.level ? ` Lv.${d.level}` : '';
+      if (kind === 'remind') {
+        return {
+          id: `day|${info.today}|${d.id}`,
+          title: '오늘 문제, 아직이에요',
+          message: `${d.title} · ${topicName(d.topic)}${lv}`,
+          contextMessage: reviewLine || '풀면 오늘 남은 알림은 오지 않아요',
+        };
+      }
       return {
-        title: '오늘 문제, 아직이에요',
-        message: `${d.title} · ${topicName(d.topic)}${lv}`,
-        contextMessage: `자기 전에 한 문제! 못 풀면 ${info.retryDays}일 뒤 다시 알려드려요`,
-        buttons: [{ title: '지금 풀러 가기' }, { title: '1시간 뒤 다시 알림' }],
+        id: `day|${info.today}|${d.id}`,
+        title: `오늘의 코테 · ${topicName(d.topic)}${lv}`,
+        message: d.title,
+        contextMessage: reviewLine || (info.streak ? `🔥 ${info.streak}일 연속 해결 중` : d.part || '하루에 알고리즘 하나'),
       };
     }
-    const extra = info.reviews.length ? ` · 복습 ${info.reviews.length}문제 대기` : '';
-    return {
-      title: `오늘의 코테 · ${topicName(d.topic)}${lv}`,
-      message: d.title,
-      contextMessage: (info.streak ? `🔥 ${info.streak}일 연속 해결 중` : d.part || '하루 한 문제') + extra,
-      buttons: [{ title: '문제 풀러 가기' }, { title: '1시간 뒤 다시 알림' }],
-    };
-  }
-
-  function reviewNotification(info) {
     const [first, ...rest] = info.reviews;
-    const more = rest.length ? ` 외 ${rest.length}문제` : '';
     return {
-      title: `다시 도전! 지난번에 못 푼 문제${more ? '들' : ''}`,
-      message: `${first.title}${first.level ? ` (Lv.${first.level})` : ''}${more}`,
+      id: `day|${info.today}|${first.id}`,
+      title: '다시 도전! 지난번에 못 푼 문제',
+      message: `${first.title}${first.level ? ` (Lv.${first.level})` : ''}${rest.length ? ` 외 ${rest.length}문제` : ''}`,
       contextMessage: `${first.missCount}번 놓친 문제예요 · 풀면 복습 목록에서 빠져요`,
-      buttons: [{ title: '다시 풀기' }, { title: '복습 목록 보기' }],
     };
   }
 
-  async function deliver(plan, info) {
-    const tasks = [];
-    if (plan.daily && info.daily?.pending) tasks.push(show(`daily|${info.today}|${info.daily.id}`, dailyNotification(info, 'daily')));
-    if (plan.review && info.reviews.length) tasks.push(show(`review|${info.today}|${info.reviews[0].id}`, reviewNotification(info)));
-    if (plan.remind) {
-      if (info.daily?.pending) tasks.push(show(`remind|${info.today}|${info.daily.id}`, dailyNotification(info, 'remind')));
-      else if (info.reviews.length) tasks.push(show(`remind|${info.today}|${info.reviews[0].id}`, reviewNotification(info)));
-    }
-    await Promise.all(tasks);
+  async function deliver(kind, info) {
+    if (!info.daily?.pending && !info.reviews.length) return;
+    const { id, ...opts } = buildNotification(kind, info);
+    await show(id, { ...opts, buttons: BUTTONS });
   }
 
   async function openProblem(id) {
@@ -153,29 +156,14 @@ export function createService({ store, chrome, now = () => Date.now(), fetchImpl
   }
 
   async function onNotificationButton(nid, index) {
-    const { kind, date, id } = parseNotificationId(nid);
+    const { id } = parseNotificationId(nid);
     await chrome.notifications.clear(nid);
     if (index === 0) {
       if (id) await openProblem(id);
       return;
     }
-    if (kind === 'review') {
-      await chrome.tabs.create({ url: dashboardUrl('#history') });
-      return;
-    }
-    // 1시간 뒤 다시 알림
-    await chrome.alarms.create(`snooze|${kind}|${date}|${id}`, { delayInMinutes: SNOOZE_MINUTES });
-  }
-
-  async function onSnooze(name) {
-    const [, kind, date, idStr] = name.split('|');
-    const id = Number(idStr);
-    const s = await store.read();
-    const today = dateKey(now());
-    if (date !== today || s.records[id]?.status !== 'pending') return; // 그새 풀었거나 날이 바뀜
-    const info = notificationInfo(s, today);
-    if (info.daily?.id === id) await show(`remind|${today}|${id}`, dailyNotification(info, kind === 'daily' ? 'daily' : 'remind'));
-    else if (info.reviews.some((r) => r.id === id)) await show(`review|${today}|${id}`, reviewNotification(info));
+    // 오늘은 그만 알림
+    await store.update((s) => muteToday(s, now()));
   }
 
   async function testNotification() {
