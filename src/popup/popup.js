@@ -201,6 +201,7 @@ function footer(v) {
     { class: 'foot' },
     h('button', { class: 'btn small', onClick: () => openDashboard('#overview') }, '대시보드'),
     h('button', { class: 'btn small ghost', onClick: () => openDashboard('#settings') }, '설정'),
+    h('button', { class: 'btn small ghost', onClick: () => openDashboard('#feedback') }, '의견 보내기'),
     h('span', { class: `sync ${sync.ok === false ? 'warn' : ''}`, title: sync.message || '' }, syncText),
   );
 }

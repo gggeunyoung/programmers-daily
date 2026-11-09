@@ -202,6 +202,29 @@ async function main() {
     st = await getState();
     check('설정 화면 → 저장 반영', st.settings.retryIntervalDays === 5, `retryIntervalDays=${st.settings.retryIntervalDays}`);
 
+    // 의견 보내기: 폼이 뜨고, 짧은 글은 막고, 메일 링크가 개발자 주소로 만들어지는지
+    await evaluate(dash.sessionId, `location.hash = '#feedback'; true`);
+    await waitUntil(dash.sessionId, `Boolean(document.querySelector('.fb textarea'))`);
+    const fbCheck = await evaluate(
+      dash.sessionId,
+      `(() => {
+        const ta = document.querySelector('.fb textarea');
+        const btn = [...document.querySelectorAll('.fb-actions button')].find((b) => b.textContent.includes('메일 앱'));
+        btn.click();
+        const warned = document.querySelector('.fb-status').textContent;
+        ta.value = '알림 시각을 분 단위로도 정하고 싶어요'; ta.dispatchEvent(new Event('input', { bubbles: true }));
+        let href = '';
+        const orig = HTMLAnchorElement.prototype.click;
+        HTMLAnchorElement.prototype.click = function () { href = this.href; };
+        btn.click();
+        HTMLAnchorElement.prototype.click = orig;
+        return { warned, href };
+      })()`,
+    );
+    check('의견 보내기: 짧은 글 막기', /5자 이상/.test(fbCheck.warned), fbCheck.warned);
+    check('의견 보내기: 개발자 메일로 보내는 링크', fbCheck.href.startsWith('mailto:gykim0330@naver.com?subject='), fbCheck.href.slice(0, 60));
+    await shot(dash.sessionId, 'dashboard-feedback');
+
     await cdp.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: 'dark' }] }, dash.sessionId);
     await evaluate(dash.sessionId, `location.hash = '#overview'; true`);
     await sleep(400);

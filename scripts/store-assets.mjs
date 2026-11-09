@@ -47,18 +47,21 @@ try {
   await waitUntil(swSession, `chrome.storage.local.get('state').then((x) => Boolean(x.state?.days?.['${today}']))`, 20_000);
   const demo = buildDemoState({ today });
   await evaluate(swSession, `chrome.storage.local.set({ state: ${JSON.stringify(demo)} }).then(() => true)`);
-  const icon = (await readFile(path.join(root, 'icons', 'icon128.png'))).toString('base64');
+  // 합성 이미지 속 로고는 여백 없는 SVG 원본을 쓴다
+  const icon = (await readFile(path.join(root, 'icons', 'src', 'icon.svg'))).toString('base64');
 
   // 대시보드 화면들(1280x800 그대로)
-  const dash = await openPage(extUrl('src/dashboard/dashboard.html#overview'), { width: 1280, height: 800 });
+  // 640x400 으로 줄여 보여 주므로 1.25배로 크게 찍는다(1024x640 화면 → 1280x800 이미지)
+  const dash = await openPage(extUrl('src/dashboard/dashboard.html#overview'), { width: 1024, height: 640, scale: 1.25 });
+  await cdp.send('Emulation.setScrollbarsHidden', { hidden: true }, dash.sessionId); // 스크린샷에 스크롤바가 찍히지 않게
   await waitUntil(dash.sessionId, `document.querySelector('.today-hero .title')?.textContent`);
-  await save('screenshots/2-overview.png', await capture(dash.sessionId, { width: 1280, height: 800 }));
+  await save('screenshots/2-overview.png', await capture(dash.sessionId, { width: 1024, height: 640, scale: 1.25 }));
   await evaluate(dash.sessionId, `location.hash = '#weakness'; true`);
   await waitUntil(dash.sessionId, `document.querySelectorAll('.bar-row').length === 14`);
-  await save('screenshots/4-weakness.png', await capture(dash.sessionId, { width: 1280, height: 800 }));
+  await save('screenshots/4-weakness.png', await capture(dash.sessionId, { width: 1024, height: 640, scale: 1.25 }));
   await evaluate(dash.sessionId, `location.hash = '#history'; true`);
   await waitUntil(dash.sessionId, `document.querySelectorAll('tbody tr').length > 3`);
-  await save('screenshots/5-history.png', await capture(dash.sessionId, { width: 1280, height: 800 }));
+  await save('screenshots/5-history.png', await capture(dash.sessionId, { width: 1024, height: 640, scale: 1.25 }));
 
   const base = `*{box-sizing:border-box}html,body{margin:0;font-family:${FONT};-webkit-font-smoothing:antialiased}`;
 
@@ -90,7 +93,7 @@ try {
       <div class="copy"><h1>제출만 하면 자동으로 체크</h1><p>정한 시각마다 같은 문제로 알림을 받고, 제출하면 정답·오답이<br>기록돼요. 풀면 그날 알림은 끝, 못 풀면 며칠 뒤 다시 알려 드려요.</p></div>
       <div class="label" style="left:100px;top:420px">정한 시각마다 알림 (기본 10·14·17·20시)</div>
       <div class="note">
-        <div class="app"><img src="data:image/png;base64,${icon}">Google Chrome · 1일1코</div>
+        <div class="app"><img src="data:image/svg+xml;base64,${icon}">Google Chrome · 1일1코</div>
         <h3>오늘의 코테 · 해시 Lv.2</h3>
         <div class="m">전화번호 목록</div>
         <div class="c">🔥 4일 연속 해결 중 · 복습 1문제 대기</div>
@@ -119,8 +122,8 @@ try {
       p{margin:18px 0 0;font-size:21px;font-weight:700;color:#fff}
       small{display:block;margin-top:6px;font-size:15px;font-weight:600;color:#dbe9fb}
       </style></head><body>
-      <div class="row"><img src="data:image/png;base64,${icon}"><h1>1일1코</h1></div>
-      <p>하루에 알고리즘 하나<small>알림 · 풀이 자동 체크 · 약점 분석</small></p>
+      <div class="row"><img src="data:image/svg+xml;base64,${icon}"><h1>1일1코</h1></div>
+      <p>하루에 알고리즘 하나</p>
       </body></html>`,
       { width: 440, height: 280 },
     ),

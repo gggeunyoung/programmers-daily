@@ -11,7 +11,8 @@ const OUT = path.join(root, 'store', 'images', 'screenshots', '1-main.png');
 const PROFILE = path.join(root, '.e2e-profile-main');
 const FONT = `Pretendard, 'Malgun Gothic', 'Apple SD Gothic Neo', system-ui, sans-serif`;
 
-const icon = (await readFile(path.join(root, 'icons', 'icon128.png'))).toString('base64');
+// 로고는 여백 없는 SVG 원본을 쓴다
+const icon = (await readFile(path.join(root, 'icons', 'src', 'icon.svg'))).toString('base64');
 const svg = (body) =>
   `<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${body}</svg>`;
 const ICON_BELL = svg('<path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/>');
@@ -65,7 +66,7 @@ li small{display:block;margin-top:2px;font-size:15px;color:#7a7974}
 .done span{display:block;margin-top:3px;font-size:14px;color:#adb5bd}
 </style></head><body>
 <div class="copy">
-  <div class="logo"><img src="data:image/png;base64,${icon}"><b>1일1코</b></div>
+  <div class="logo"><img src="data:image/svg+xml;base64,${icon}"><b>1일1코</b></div>
   <h1>하루에<br><span>알고리즘 하나</span></h1>
   <p class="lead">코테 단골 유형에서 매일 한 문제를 골라<br>알림으로 보내 드려요.</p>
   <ul>
@@ -76,7 +77,7 @@ li small{display:block;margin-top:2px;font-size:15px;color:#7a7974}
 </div>
 <div class="visual">
   <div class="notif">
-    <div class="nhead"><img src="data:image/png;base64,${icon}">1일1코 · 오전 10:00</div>
+    <div class="nhead"><img src="data:image/svg+xml;base64,${icon}">1일1코 · 오전 10:00</div>
     <div class="ntitle">오늘의 코테 · DFS/BFS Lv.2</div>
     <div class="nmsg">게임 맵 최단거리</div>
   </div>

@@ -16,7 +16,8 @@ const JOBS = [
   { svg: small, canvas: 16, art: 16, out: 'icons/icon16.png' },
   { svg: small, canvas: 32, art: 32, out: 'icons/icon32.png' },
   { svg: big, canvas: 48, art: 48, out: 'icons/icon48.png' },
-  { svg: big, canvas: 128, art: 128, out: 'icons/icon128.png' },
+  // 128px 는 웹스토어 가이드대로 그림 96 + 사방 16px 투명 여백 (설치 창·확장 관리 페이지에 쓰임)
+  { svg: big, canvas: 128, art: 96, out: 'icons/icon128.png' },
   { svg: big, canvas: 128, art: 96, out: 'store/images/icon-store-128.png' },
 ];
 

@@ -3,6 +3,18 @@ import { CATALOG_META } from '../lib/catalog.js';
 import { dateKey, parseKey, prettyDate, relativeDay } from '../lib/dates.js';
 import { problemUrl } from '../lib/programmers.js';
 import { chooseInTopic } from '../lib/recommender.js';
+import {
+  buildFeedback,
+  canSendDirect,
+  envLine,
+  FEEDBACK_EMAIL,
+  issueUrl,
+  KINDS,
+  mailtoUrl,
+  MAX_MESSAGE,
+  sendDirect,
+  validateFeedback,
+} from '../lib/feedback.js';
 import { DEFAULT_NOTIFY_TIMES, LANGUAGES, MAX_NOTIFY_TIMES } from '../lib/state.js';
 import { TOPIC_MAP, TOPICS, topicName, topicShort } from '../lib/topics.js';
 import {
@@ -39,9 +51,9 @@ async function init() {
   });
   onStateChange((s) => {
     state = s;
-    // 설정 화면은 입력 중 포커스를 잃지 않도록 다시 그리지 않고 동기화 상태만 갱신
+    // 설정·의견 화면은 입력 중인 내용을 잃지 않도록 다시 그리지 않는다
     if (route() === 'settings') updateSyncStatus();
-    else render();
+    else if (route() !== 'feedback') render();
   });
   render();
 }
@@ -76,6 +88,7 @@ function render() {
   if (r === 'history') mount(viewEl, historyPage(v));
   else if (r === 'weakness') mount(viewEl, weaknessPage(v));
   else if (r === 'settings') mount(viewEl, settingsPage(v));
+  else if (r === 'feedback') mount(viewEl, feedbackPage());
   else mount(viewEl, overviewPage(v, r === 'welcome'));
 }
 
@@ -883,6 +896,176 @@ function settingsPage() {
   return [
     h('div', null, h('h1', { class: 'page-title' }, '설정'), h('p', { class: 'page-desc' }, '바꾸면 바로 저장돼요.')),
     h('div', { class: 'settings-grid' }, h('div', { style: { display: 'flex', flexDirection: 'column', gap: '18px' } }, notify, topics), h('div', { style: { display: 'flex', flexDirection: 'column', gap: '18px' } }, recommend, data)),
+  ];
+}
+
+// ── 의견 보내기 ───────────────────────────────────────────
+function feedbackPage() {
+  const form = { kind: 'idea', message: '', replyTo: '', includeEnv: true };
+  const env = {
+    version: chrome.runtime.getManifest().version,
+    userAgent: navigator.userAgent,
+    platform: navigator.userAgentData?.platform || navigator.platform || '',
+  };
+  const status = h('div', { class: 'fb-status', role: 'status', 'aria-live': 'polite' });
+  const setStatus = (text, tone = '') => {
+    status.textContent = text;
+    status.className = `fb-status ${tone}`;
+  };
+  const counter = h('span', { class: 'fb-count' }, `0 / ${MAX_MESSAGE}`);
+  const textarea = h('textarea', {
+    rows: '7',
+    maxlength: String(MAX_MESSAGE),
+    'aria-label': '의견 내용',
+    placeholder: '어떤 상황에서 무엇이 불편했는지, 어떤 기능이 있으면 좋을지 자유롭게 적어 주세요.',
+    onInput: (e) => {
+      form.message = e.target.value;
+      counter.textContent = `${e.target.value.length} / ${MAX_MESSAGE}`;
+    },
+  });
+  const email = h('input', {
+    type: 'email',
+    'aria-label': '답장 받을 이메일',
+    placeholder: '답장 받을 이메일 (선택)',
+    onInput: (e) => {
+      form.replyTo = e.target.value;
+    },
+  });
+  const kinds = h(
+    'div',
+    { class: 'seg', role: 'radiogroup', 'aria-label': '의견 종류' },
+    KINDS.map(([k, label]) =>
+      h(
+        'label',
+        { class: 'seg-item' },
+        h('input', { type: 'radio', name: 'fb-kind', value: k, checked: form.kind === k, onChange: () => (form.kind = k) }),
+        h('span', null, label),
+      ),
+    ),
+  );
+  const prepare = () => {
+    const err = validateFeedback(form);
+    if (err) {
+      setStatus(err, 'warn');
+      textarea.focus();
+      return null;
+    }
+    return buildFeedback(form, env);
+  };
+  const clearForm = () => {
+    textarea.value = '';
+    form.message = '';
+    counter.textContent = `0 / ${MAX_MESSAGE}`;
+  };
+
+  const actions = [];
+  if (canSendDirect()) {
+    actions.push(
+      h(
+        'button',
+        {
+          class: 'btn primary',
+          type: 'button',
+          onClick: async (e) => {
+            const fb = prepare();
+            if (!fb) return;
+            e.currentTarget.disabled = true;
+            const btn = e.currentTarget;
+            setStatus('보내는 중…');
+            try {
+              await sendDirect(fb, { replyTo: form.replyTo });
+              setStatus('보냈어요! 소중한 의견 고마워요.', 'ok');
+              clearForm();
+            } catch (err) {
+              setStatus(`보내지 못했어요(${err.message}). '메일 앱으로 보내기'나 '내용 복사'를 써 주세요.`, 'warn');
+            } finally {
+              btn.disabled = false;
+            }
+          },
+        },
+        '보내기',
+      ),
+    );
+  }
+  actions.push(
+    h(
+      'button',
+      {
+        class: `btn ${canSendDirect() ? '' : 'primary'}`,
+        type: 'button',
+        onClick: () => {
+          const fb = prepare();
+          if (!fb) return;
+          const a = h('a', { href: mailtoUrl(fb), target: '_blank', rel: 'noopener' });
+          document.body.append(a);
+          a.click();
+          a.remove();
+          setStatus("메일 앱이 열렸어요. 안 열리면 '내용 복사'를 눌러 메일에 붙여 넣어 주세요.");
+        },
+      },
+      '메일 앱으로 보내기',
+    ),
+    h(
+      'button',
+      {
+        class: 'btn',
+        type: 'button',
+        onClick: async () => {
+          const fb = prepare();
+          if (!fb) return;
+          try {
+            await navigator.clipboard.writeText(`받는 사람: ${FEEDBACK_EMAIL}\n제목: ${fb.subject}\n\n${fb.body}`);
+            setStatus(`복사했어요. ${FEEDBACK_EMAIL} 로 메일을 보내 주세요.`, 'ok');
+          } catch {
+            setStatus('복사하지 못했어요. 내용을 직접 선택해서 복사해 주세요.', 'warn');
+          }
+        },
+      },
+      '내용 복사',
+    ),
+    h(
+      'button',
+      {
+        class: 'btn ghost',
+        type: 'button',
+        onClick: () => {
+          const fb = prepare();
+          if (fb) openUrl(issueUrl(fb));
+        },
+      },
+      'GitHub 이슈로 남기기',
+    ),
+  );
+
+  return [
+    h(
+      'div',
+      null,
+      h('h1', { class: 'page-title' }, '의견 보내기'),
+      h('p', { class: 'page-desc' }, '버그, 불편한 점, 있었으면 하는 기능을 알려 주세요. 개발자 메일로 전달돼요.'),
+    ),
+    h(
+      'section',
+      { class: 'card section fb' },
+      h('div', { class: 'fb-row' }, h('div', { class: 'fb-label' }, '종류'), kinds),
+      h('div', { class: 'fb-row col' }, h('div', { class: 'fb-label' }, '내용', counter), textarea),
+      h('div', { class: 'fb-row' }, h('div', { class: 'fb-label' }, '답장'), email),
+      h(
+        'label',
+        { class: 'fb-env' },
+        h('input', { type: 'checkbox', checked: true, onChange: (e) => (form.includeEnv = e.target.checked) }),
+        `확장·크롬 버전 함께 보내기 (${envLine(env)})`,
+      ),
+      h('div', { class: 'fb-actions' }, actions),
+      status,
+      h(
+        'p',
+        { class: 'muted fb-note' },
+        canSendDirect()
+          ? `'보내기'를 누르면 내용이 메일 전달 서비스(Web3Forms)를 거쳐 개발자(${FEEDBACK_EMAIL})에게 도착해요.`
+          : `메일 앱이 없으면 '내용 복사' 후 ${FEEDBACK_EMAIL} 로 보내 주세요. 버튼을 누르기 전에는 아무것도 전송되지 않아요.`,
+      ),
+    ),
   ];
 }
 
